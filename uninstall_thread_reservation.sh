@@ -6,13 +6,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Para e desabilita o serviço
-systemctl stop reserve-threads.service
-systemctl disable reserve-threads.service
+# Para e desabilita os serviços
+systemctl stop reserve-threads.service monitor-miners.service
+systemctl disable reserve-threads.service monitor-miners.service
 
 # Remove os arquivos
 rm -f /etc/systemd/system/reserve-threads.service
+rm -f /etc/systemd/system/monitor-miners.service
 rm -f /usr/local/bin/reserve_system_threads.sh
+rm -f /usr/local/bin/monitor_miners.sh
 
 # Recarrega o systemd
 systemctl daemon-reload
@@ -23,5 +25,5 @@ if mountpoint -q /sys/fs/cgroup/cpuset; then
     rmdir /sys/fs/cgroup/cpuset/system /sys/fs/cgroup/cpuset/user /sys/fs/cgroup/cpuset
 fi
 
-echo "Desinstalação concluída! A reserva de threads foi removida."
-echo "Reinicie o sistema para garantir que tudo volte ao normal."
+echo "Desinstalação concluída! Reserva de threads removida."
+echo "Reinicie o sistema pra voltar ao normal."
