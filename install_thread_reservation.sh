@@ -27,7 +27,7 @@ START_RESERVED=$((TOTAL - RESERVED))
 SYSTEM_CPUS="$START_RESERVED-$((TOTAL-1))"
 USER_CPUS="0-$((START_RESERVED-1))"
 
-# Configura o cpuset raiz (todos os threads)
+# Configura o cpuset raiz (todos os threads inicialmente)
 echo "0-$((TOTAL-1))" > "$MOUNT_POINT/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/cpuset.mems"
 
@@ -35,11 +35,18 @@ echo "0" > "$MOUNT_POINT/cpuset.mems"
 mkdir -p "$MOUNT_POINT/system"
 echo "$SYSTEM_CPUS" > "$MOUNT_POINT/system/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/system/cpuset.mems"
+echo "1" > "$MOUNT_POINT/system/cpuset.cpu_exclusive"  # Exclusivo pro sistema
 
 # Configura cpuset pros mineradores (80%)
 mkdir -p "$MOUNT_POINT/user"
 echo "$USER_CPUS" > "$MOUNT_POINT/user/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/user/cpuset.mems"
+echo "1" > "$MOUNT_POINT/user/cpuset.cpu_exclusive"  # Exclusivo pros mineradores
+
+# Move todos os processos existentes pro grupo user inicialmente
+while read -r pid; do
+    echo "$pid" > "$MOUNT_POINT/user/tasks" 2>/dev/null
+done < "$MOUNT_POINT/tasks"
 
 # Log pra debug
 echo "$(date): Total=$TOTAL, Reserved=$RESERVED, System=$SYSTEM_CPUS, User=$USER_CPUS" >> /var/log/reserve_threads.log
@@ -52,21 +59,31 @@ chmod +x /usr/local/bin/reserve_system_threads.sh
 cat > /usr/local/bin/monitor_miners.sh << 'EOF'
 #!/bin/bash
 # Lista de mineradores comuns no HiveOS
-MINERS="tnn-miner xmrig cpuminer lolminer nanominer"
+MINERS="tnn-miner xmrig cpuminer lolminer nanominer phoenixminer ethminer"
 while true; do
-    # Move processos de mineradores pro grupo user
+    # Move processos de mineradores e seus filhos pro grupo user
     for miner in $MINERS; do
-        pids=$(pgrep -f "$miner")
+        pids=$(pidof "$miner" 2>/dev/null || pgrep -f "$miner")
         for pid in $pids; do
+            # Move o processo principal
             echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved $miner (PID $pid) to user" >> /var/log/monitor_miners.log
+            # Move todos os filhos
+            child_pids=$(pstree -p "$pid" 2>/dev/null | grep -o '[0-9]\+' || ps -o pid --ppid "$pid" | grep -v PID)
+            for child_pid in $child_pids; do
+                echo "$child_pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved child (PID $child_pid) of $miner to user" >> /var/log/monitor_miners.log
+            done
         done
     done
     # Move qualquer processo em /hive/miners/
     pids=$(ps -eo pid,cmd | grep -E '/hive/miners/[^ ]*/[^ ]*$' | grep -v grep | awk '{print $1}')
     for pid in $pids; do
         echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved miner (PID $pid) from /hive/miners/ to user" >> /var/log/monitor_miners.log
+        child_pids=$(pstree -p "$pid" 2>/dev/null | grep -o '[0-9]\+' || ps -o pid --ppid "$pid" | grep -v PID)
+        for child_pid in $child_pids; do
+            echo "$child_pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved child (PID $child_pid) from /hive/miners/ to user" >> /var/log/monitor_miners.log
+        done
     done
-    sleep 2  # Checa a cada 2 segundos
+    sleep 0.1  # Checa a cada 0,1 segundos
 done
 EOF
 chmod +x /usr/local/bin/monitor_miners.sh
