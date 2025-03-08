@@ -1,6 +1,6 @@
 # CPU Threads Limiter
 
-Scripts para reservar 10% dos threads da CPU para o sistema e HiveOS no Ubuntu 22.04, deixando 90% para mineradores, sem precisar ajustar Flight Sheets.
+Scripts para reservar 20% dos threads da CPU para o sistema e HiveOS no Ubuntu 22.04, deixando 80% para mineradores, sem precisar ajustar Flight Sheets.
 
 ## Instalação
 ```bash

@@ -13,13 +13,13 @@ cat > /usr/local/bin/reserve_system_threads.sh << 'EOF'
 MOUNT_POINT="/sys/fs/cgroup/cpuset"
 if [ ! -d "$MOUNT_POINT" ]; then
     mkdir -p "$MOUNT_POINT"
-    mount -t cgroup -o cpuset cpuset "$MOUNT_POINT"
+    mount -t cgroup -o cpuset cpuset "$MOUNT_POINT" || { echo "Falha ao montar cpuset"; exit 1; }
 fi
 
 # Pega o total de threads
 TOTAL=$(nproc)
-# Calcula 10% pra reservar (mínimo 1)
-RESERVED=$((TOTAL * 10 / 100))
+# Calcula 20% pra reservar (mínimo 1)
+RESERVED=$((TOTAL * 20 / 100))
 [ $RESERVED -lt 1 ] && RESERVED=1
 # Define o início dos threads reservados
 START_RESERVED=$((TOTAL - RESERVED))
@@ -31,12 +31,12 @@ USER_CPUS="0-$((START_RESERVED-1))"
 echo "0-$((TOTAL-1))" > "$MOUNT_POINT/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/cpuset.mems"
 
-# Configura cpuset pro sistema (10%)
+# Configura cpuset pro sistema (20%)
 mkdir -p "$MOUNT_POINT/system"
 echo "$SYSTEM_CPUS" > "$MOUNT_POINT/system/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/system/cpuset.mems"
 
-# Configura cpuset pros mineradores (90%)
+# Configura cpuset pros mineradores (80%)
 mkdir -p "$MOUNT_POINT/user"
 echo "$USER_CPUS" > "$MOUNT_POINT/user/cpuset.cpus"
 echo "0" > "$MOUNT_POINT/user/cpuset.mems"
@@ -51,21 +51,22 @@ chmod +x /usr/local/bin/reserve_system_threads.sh
 # Cria o script de monitoramento de mineradores
 cat > /usr/local/bin/monitor_miners.sh << 'EOF'
 #!/bin/bash
+# Lista de mineradores comuns no HiveOS
+MINERS="tnn-miner xmrig cpuminer lolminer nanominer"
 while true; do
-    # Lista processos de mineradores comuns no HiveOS
-    for miner in tnn-miner xmrig cpuminer; do
-        # Encontra PIDs de mineradores pelo nome
+    # Move processos de mineradores pro grupo user
+    for miner in $MINERS; do
         pids=$(pgrep -f "$miner")
         for pid in $pids; do
-            # Move pro grupo user (90% dos threads)
-            echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null
+            echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved $miner (PID $pid) to user" >> /var/log/monitor_miners.log
         done
     done
-    # Verifica processos em /hive/miners/
-    for pid in $(ps -eo pid,cmd | grep '/hive/miners/' | grep -v grep | awk '{print $1}'); do
-        echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null
+    # Move qualquer processo em /hive/miners/
+    pids=$(ps -eo pid,cmd | grep -E '/hive/miners/[^ ]*/[^ ]*$' | grep -v grep | awk '{print $1}')
+    for pid in $pids; do
+        echo "$pid" > /sys/fs/cgroup/cpuset/user/tasks 2>/dev/null && echo "$(date): Moved miner (PID $pid) from /hive/miners/ to user" >> /var/log/monitor_miners.log
     done
-    sleep 5  # Checa a cada 5 segundos
+    sleep 2  # Checa a cada 2 segundos
 done
 EOF
 chmod +x /usr/local/bin/monitor_miners.sh
@@ -73,7 +74,7 @@ chmod +x /usr/local/bin/monitor_miners.sh
 # Cria o serviço de reserva de threads
 cat > /etc/systemd/system/reserve-threads.service << 'EOF'
 [Unit]
-Description=Reserva 10% dos threads com cpuset no boot
+Description=Reserva 20% dos threads com cpuset no boot
 After=network.target
 
 [Service]
@@ -105,6 +106,6 @@ systemctl daemon-reload
 systemctl enable reserve-threads.service monitor-miners.service
 systemctl start reserve-threads.service monitor-miners.service
 
-echo "Instalação concluída! 10% dos threads estão reservados pro sistema e HiveOS."
-echo "Mineradores serão automaticamente restritos aos 90% restantes."
-echo "Verifique após reboot: cat /var/log/reserve_threads.log"
+echo "Instalação concluída! 20% dos threads estão reservados pro sistema e HiveOS."
+echo "Mineradores serão restritos aos 80% automaticamente."
+echo "Verifique: cat /var/log/reserve_threads.log e /var/log/monitor_miners.log"
