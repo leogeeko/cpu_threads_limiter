@@ -19,11 +19,14 @@ rm -f /usr/local/bin/monitor_miners.sh
 # Recarrega o systemd
 systemctl daemon-reload
 
-# Opcional: desmonta o cpuset
+# Desmonta o cpuset e remove diretórios, se existirem
 if mountpoint -q /sys/fs/cgroup/cpuset; then
-    umount /sys/fs/cgroup/cpuset
-    rmdir /sys/fs/cgroup/cpuset/system /sys/fs/cgroup/cpuset/user /sys/fs/cgroup/cpuset
+    umount /sys/fs/cgroup/cpuset 2>/dev/null
 fi
+# Remove os subdiretórios apenas se existirem
+[ -d /sys/fs/cgroup/cpuset/system ] && rmdir /sys/fs/cgroup/cpuset/system 2>/dev/null
+[ -d /sys/fs/cgroup/cpuset/user ] && rmdir /sys/fs/cgroup/cpuset/user 2>/dev/null
+[ -d /sys/fs/cgroup/cpuset ] && rmdir /sys/fs/cgroup/cpuset 2>/dev/null
 
 echo "Desinstalação concluída! Reserva de threads removida."
 echo "Reinicie o sistema pra voltar ao normal."
